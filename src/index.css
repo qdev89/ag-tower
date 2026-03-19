@@ -771,107 +771,97 @@ body {
   animation: pulse 2s ease-in-out infinite;
 }
 
-/* Toggle Switch */
-.toggle {
-  width: 36px;
-  height: 20px;
-  border-radius: 12px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-primary);
-  cursor: pointer;
-  position: relative;
-  transition: all var(--transition-fast);
-  flex-shrink: 0;
+/* ============================================================
+   Premium Micro-Animations & Utilities
+   ============================================================ */
+
+/* Stagger animation for lists */
+@keyframes staggerFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-.toggle::after {
-  content: '';
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--text-muted);
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  transition: all var(--transition-fast);
+.stagger-item {
+  animation: staggerFadeIn 0.3s ease forwards;
+  opacity: 0;
 }
 
-.toggle.active {
-  background: var(--accent-primary);
-  border-color: var(--accent-primary);
+/* Glow pulse for active items */
+@keyframes glowPulse {
+  0%, 100% { box-shadow: 0 0 8px var(--accent-glow); }
+  50% { box-shadow: 0 0 20px var(--accent-glow); }
 }
 
-.toggle.active::after {
-  background: white;
-  left: 18px;
+.glow-active {
+  animation: glowPulse 2s ease-in-out infinite;
 }
 
-/* Spin animation */
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+/* Scale on hover */
+.hover-lift {
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
 }
 
-/* Badge utility */
-.badge {
+.hover-lift:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-hover);
+}
+
+/* Shimmer loading effect */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.shimmer {
+  background: linear-gradient(90deg,
+    var(--bg-card) 25%,
+    var(--bg-elevated) 50%,
+    var(--bg-card) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s linear infinite;
+}
+
+/* Card title alignment fix */
+.card-title {
+  display: flex;
+  align-items: center;
+}
+
+/* Floating label pill */
+.pill {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 8px;
+  padding: 3px 10px;
   border-radius: 999px;
   font-size: 10px;
   font-weight: 600;
   white-space: nowrap;
-}
-
-/* Button primary */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-primary);
   background: var(--bg-elevated);
-  color: var(--text-primary);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all var(--transition-fast);
+  color: var(--text-muted);
+  border: 1px solid var(--border-primary);
 }
 
-.btn:hover {
-  background: var(--bg-card-hover);
-  border-color: var(--border-hover);
+/* Accent bar for cards */
+.card-accent-top {
+  position: relative;
 }
 
-.btn-primary {
-  background: var(--accent-primary);
-  border-color: var(--accent-primary);
-  color: white;
+.card-accent-top::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 20px;
+  right: 20px;
+  height: 2px;
+  background: var(--accent-gradient);
+  border-radius: 0 0 2px 2px;
 }
 
-.btn-primary:hover {
-  background: var(--accent-secondary);
-  border-color: var(--accent-secondary);
-}
-
-.btn-sm {
-  padding: 4px 10px;
-  font-size: 11px;
-}
-
-/* Card header */
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-
-.card-title {
-  font-size: 14px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
+/* Responsive grid utility */
+.grid-auto-fill {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
 }
