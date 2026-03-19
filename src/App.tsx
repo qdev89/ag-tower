@@ -1,11 +1,11 @@
-import { BrowserRouter, Routes, Route, NavLink, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Plug, FileText, Brain, GitBranch,
   Zap, BookOpen, Bot, Webhook, MemoryStick, Rocket,
   Workflow, Settings, BarChart3, MessageSquare, Palette,
-  FileSearch
+  FileSearch, Command
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
 import Dashboard from './pages/Dashboard';
@@ -26,6 +26,10 @@ import OfficeHours from './pages/OfficeHours';
 import DesignEditor from './pages/DesignEditor';
 import DocsHealth from './pages/DocsHealth';
 
+import ThemeSwitcher, { useTheme } from './components/ThemeSwitcher';
+import CommandPalette from './components/CommandPalette';
+import ToastContainer from './components/Toast';
+
 import './index.css';
 
 interface SystemHealth {
@@ -43,6 +47,7 @@ interface SystemHealth {
   agent_dir_exists: boolean;
 }
 
+// Only items with paths (filter out section headers for keyboard nav)
 const navItems = [
   { section: 'Core' },
   { path: '/', icon: LayoutDashboard, label: 'Dashboard', key: 'dashboard' },
@@ -67,8 +72,18 @@ const navItems = [
   { path: '/settings', icon: Settings, label: 'Settings', key: 'settings' },
 ];
 
-function Sidebar({ health }: { health: SystemHealth | null }) {
+// Extract only navigable items for keyboard nav
+const navigableItems = navItems.filter(item => 'path' in item && item.path) as Array<{ path: string; icon: typeof LayoutDashboard; label: string; key: string }>;
+
+function Sidebar({ health, theme, onToggleTheme }: {
+  health: SystemHealth | null;
+  theme: 'dark' | 'light';
+  onToggleTheme: () => void;
+}) {
   const location = useLocation();
+  const navigate = useNavigate();
+  const navRef = useRef<HTMLElement>(null);
+  const [focusIndex, setFocusIndex] = useState(-1);
 
   const getBadge = (key: string): string | null => {
     if (!health) return null;
@@ -79,16 +94,50 @@ function Sidebar({ health }: { health: SystemHealth | null }) {
     return null;
   };
 
+  // Keyboard navigation in sidebar
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    // Only when sidebar is focused
+    if (!navRef.current?.contains(document.activeElement) && focusIndex === -1) return;
+
+    if (e.key === 'ArrowDown' || e.key === 'j') {
+      e.preventDefault();
+      setFocusIndex(i => {
+        const next = Math.min(i + 1, navigableItems.length - 1);
+        return next;
+      });
+    } else if (e.key === 'ArrowUp' || e.key === 'k') {
+      e.preventDefault();
+      setFocusIndex(i => {
+        const prev = Math.max(i - 1, 0);
+        return prev;
+      });
+    } else if (e.key === 'Enter' && focusIndex >= 0) {
+      e.preventDefault();
+      navigate(navigableItems[focusIndex].path);
+    }
+  }, [focusIndex, navigate]);
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
+
+  // Reset focus when route changes
+  useEffect(() => {
+    setFocusIndex(-1);
+  }, [location.pathname]);
+
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
         <div className="sidebar-brand-icon">🗼</div>
-        <div>
+        <div style={{ flex: 1 }}>
           <h1>AG Tower</h1>
           <span>Antigravity Control</span>
         </div>
+        <ThemeSwitcher theme={theme} onToggle={onToggleTheme} />
       </div>
-      <nav className="sidebar-nav">
+      <nav className="sidebar-nav" ref={navRef}>
         {navItems.map((item, i) => {
           if ('section' in item && !('path' in item)) {
             return <div key={i} className="sidebar-section-label">{item.section}</div>;
@@ -97,11 +146,13 @@ function Sidebar({ health }: { health: SystemHealth | null }) {
           const Icon = item.icon!;
           const badge = getBadge(item.key!);
           const isActive = location.pathname === item.path;
+          const navIdx = navigableItems.findIndex(n => n.path === item.path);
+          const isFocused = navIdx === focusIndex;
           return (
             <NavLink
               key={item.path}
               to={item.path!}
-              className={`sidebar-link ${isActive ? 'active' : ''}`}
+              className={`sidebar-link ${isActive ? 'active' : ''} ${isFocused ? 'focused' : ''}`}
             >
               <Icon className="icon" size={18} />
               <span>{item.label}</span>
@@ -114,8 +165,18 @@ function Sidebar({ health }: { health: SystemHealth | null }) {
         <div className="sidebar-machine">
           <div className="sidebar-machine-dot" />
           <span>{health?.hostname || 'Connecting...'}</span>
-          <span style={{ marginLeft: 'auto', opacity: 0.5 }}>
-            {health?.os === 'windows' ? '🪟' : '🐧'}
+          <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <kbd style={{
+              fontSize: '9px', fontFamily: 'var(--font-mono)',
+              padding: '1px 4px', borderRadius: '3px',
+              background: 'var(--bg-elevated)', color: 'var(--text-muted)',
+              border: '1px solid var(--border-primary)',
+            }}>
+              <Command size={8} /> K
+            </kbd>
+            <span style={{ opacity: 0.5 }}>
+              {health?.os === 'windows' ? '🪟' : '🐧'}
+            </span>
           </span>
         </div>
       </div>
@@ -124,10 +185,9 @@ function Sidebar({ health }: { health: SystemHealth | null }) {
 }
 
 
-
-
 export default function App() {
   const [health, setHealth] = useState<SystemHealth | null>(null);
+  const { theme, toggle: toggleTheme } = useTheme();
 
   useEffect(() => {
     invoke<SystemHealth>('get_system_health')
@@ -138,7 +198,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <div className="app-layout">
-        <Sidebar health={health} />
+        <Sidebar health={health} theme={theme} onToggleTheme={toggleTheme} />
         <main className="main-content">
           <Routes>
             <Route path="/" element={<Dashboard health={health} />} />
@@ -160,6 +220,8 @@ export default function App() {
             <Route path="/docs-health" element={<DocsHealth />} />
           </Routes>
         </main>
+        <CommandPalette />
+        <ToastContainer />
       </div>
     </BrowserRouter>
   );
