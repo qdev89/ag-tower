@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import {
   Settings, Cloud, HardDrive, Monitor, Shield,
   RefreshCw, FolderSync, Check, AlertTriangle,
-  Lock, Unlock
+  Lock, Unlock, Save, Info, Cpu, Globe
 } from 'lucide-react';
+import { showToast } from '../components/Toast';
 
 // ============================================================
 // Settings — Cross-Machine Sync + Safety Controls (gstack /careful /freeze /guard)
@@ -13,66 +15,167 @@ interface SyncConfig {
   enabled: boolean;
   provider: 'gdrive' | 'onedrive' | 'manual';
   lastSync: string;
-  autoSyncInterval: number; // minutes
+  autoSyncInterval: number;
   syncKnowledge: boolean;
   syncBrain: boolean;
   syncSkills: boolean;
 }
 
 interface SafetyConfig {
-  carefulMode: boolean; // Warn before destructive commands
-  guardMode: boolean;   // Maximum safety — lock all non-target dirs
-  frozenDirs: string[]; // Directories locked from edits
+  carefulMode: boolean;
+  guardMode: boolean;
+  frozenDirs: string[];
 }
 
-export default function SettingsPage() {
-  const [syncConfig, setSyncConfig] = useState<SyncConfig>({
+interface AppSettings {
+  sync: SyncConfig;
+  safety: SafetyConfig;
+  theme: 'dark' | 'light' | 'system';
+  workspace: string;
+}
+
+const DEFAULT_SETTINGS: AppSettings = {
+  sync: {
     enabled: true,
     provider: 'gdrive',
-    lastSync: '2026-03-19 23:45',
+    lastSync: 'Never',
     autoSyncInterval: 30,
     syncKnowledge: true,
     syncBrain: true,
     syncSkills: false,
-  });
-
-  const [safety, setSafety] = useState<SafetyConfig>({
+  },
+  safety: {
     carefulMode: true,
     guardMode: false,
     frozenDirs: ['src-tauri/', 'node_modules/'],
-  });
+  },
+  theme: 'dark',
+  workspace: '',
+};
 
+export default function SettingsPage() {
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [newFreezeDir, setNewFreezeDir] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [systemInfo, setSystemInfo] = useState<{ hostname: string; os: string } | null>(null);
 
-  const toggleSync = (key: keyof SyncConfig) => {
-    setSyncConfig(prev => ({ ...prev, [key]: !prev[key] }));
+  // Load settings from Tauri backend
+  useEffect(() => {
+    invoke<string>('get_settings')
+      .then(json => {
+        try {
+          const parsed = JSON.parse(json);
+          if (Object.keys(parsed).length > 0) {
+            setSettings(prev => ({ ...prev, ...parsed }));
+          }
+        } catch { /* use defaults */ }
+      })
+      .catch(() => {}); // Tauri not available (dev mode)
+
+    // Get system info for workspace display
+    invoke<{ hostname: string; os: string }>('get_system_health')
+      .then(health => setSystemInfo({ hostname: health.hostname, os: health.os }))
+      .catch(() => {});
+  }, []);
+
+  // Save settings to Tauri backend
+  const saveSettings = useCallback(async () => {
+    setSaving(true);
+    try {
+      await invoke('save_settings', { content: JSON.stringify(settings, null, 2) });
+      showToast('success', 'Settings saved');
+      setIsDirty(false);
+    } catch {
+      showToast('error', 'Failed to save settings (Tauri not available in dev mode)');
+    }
+    setSaving(false);
+  }, [settings]);
+
+  // Track changes
+  const updateSync = (key: keyof SyncConfig, value: unknown) => {
+    setSettings(prev => ({ ...prev, sync: { ...prev.sync, [key]: value } }));
+    setIsDirty(true);
   };
 
   const toggleSafety = (key: keyof SafetyConfig) => {
-    setSafety(prev => ({ ...prev, [key]: !prev[key] }));
+    setSettings(prev => ({
+      ...prev,
+      safety: { ...prev.safety, [key]: !prev.safety[key] },
+    }));
+    setIsDirty(true);
   };
 
   const addFreezeDir = () => {
-    if (newFreezeDir && !safety.frozenDirs.includes(newFreezeDir)) {
-      setSafety(prev => ({ ...prev, frozenDirs: [...prev.frozenDirs, newFreezeDir] }));
+    if (newFreezeDir && !settings.safety.frozenDirs.includes(newFreezeDir)) {
+      setSettings(prev => ({
+        ...prev,
+        safety: { ...prev.safety, frozenDirs: [...prev.safety.frozenDirs, newFreezeDir] },
+      }));
       setNewFreezeDir('');
+      setIsDirty(true);
     }
   };
 
   const removeFreezeDir = (dir: string) => {
-    setSafety(prev => ({ ...prev, frozenDirs: prev.frozenDirs.filter(d => d !== dir) }));
+    setSettings(prev => ({
+      ...prev,
+      safety: { ...prev.safety, frozenDirs: prev.safety.frozenDirs.filter(d => d !== dir) },
+    }));
+    setIsDirty(true);
   };
+
+  const syncConfig = settings.sync;
+  const safety = settings.safety;
 
   return (
     <div className="fade-in">
       <div className="page-header">
-        <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <Settings size={22} style={{ color: 'var(--text-accent)' }} />
-          Settings
-        </h2>
-        <p>Cross-machine sync · Safety controls · Preferences</p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <Settings size={22} style={{ color: 'var(--text-accent)' }} />
+              Settings
+            </h2>
+            <p>Cross-machine sync · Safety controls · Preferences</p>
+          </div>
+          {isDirty && (
+            <button
+              className="btn btn-primary"
+              onClick={saveSettings}
+              disabled={saving}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <Save size={14} />
+              {saving ? 'Saving...' : 'Save Settings'}
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* System info banner */}
+      {systemInfo && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '16px',
+          padding: '10px 16px', marginBottom: '16px',
+          background: 'var(--bg-card)', borderRadius: 'var(--radius-md)',
+          border: '1px solid var(--border-primary)', fontSize: '12px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)' }}>
+            <Cpu size={14} />
+            <span style={{ fontFamily: 'var(--font-mono)' }}>{systemInfo.hostname}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)' }}>
+            <Globe size={14} />
+            <span>{systemInfo.os}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', marginLeft: 'auto' }}>
+            <Info size={14} />
+            <span>Settings persist to <code style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--text-accent)' }}>~/.gemini/antigravity/ag-tower-settings.json</code></span>
+          </div>
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
         {/* ──── Cross-Machine Sync ──── */}
@@ -84,7 +187,7 @@ export default function SettingsPage() {
             </div>
             <div
               className={`toggle ${syncConfig.enabled ? 'active' : ''}`}
-              onClick={() => toggleSync('enabled')}
+              onClick={() => updateSync('enabled', !syncConfig.enabled)}
             />
           </div>
 
@@ -99,7 +202,7 @@ export default function SettingsPage() {
                   <button
                     key={p}
                     className={`btn btn-sm ${syncConfig.provider === p ? 'btn-primary' : ''}`}
-                    onClick={() => setSyncConfig(prev => ({ ...prev, provider: p }))}
+                    onClick={() => updateSync('provider', p)}
                   >
                     {p === 'gdrive' ? '☁️ Google Drive' : p === 'onedrive' ? '📁 OneDrive' : '🔧 Manual'}
                   </button>
@@ -130,7 +233,7 @@ export default function SettingsPage() {
                   </div>
                   <div
                     className={`toggle ${syncConfig[item.key] ? 'active' : ''}`}
-                    onClick={() => toggleSync(item.key)}
+                    onClick={() => updateSync(item.key, !syncConfig[item.key])}
                   />
                 </div>
               ))}
@@ -140,12 +243,12 @@ export default function SettingsPage() {
             <div style={{
               display: 'flex', alignItems: 'center', gap: '8px',
               padding: '10px 12px',
-              background: 'rgba(16,185,129,0.08)',
+              background: syncConfig.lastSync !== 'Never' ? 'rgba(16,185,129,0.08)' : 'rgba(245,158,11,0.08)',
               borderRadius: 'var(--radius-md)',
-              border: '1px solid rgba(16,185,129,0.2)',
+              border: `1px solid ${syncConfig.lastSync !== 'Never' ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)'}`,
             }}>
-              <Check size={14} style={{ color: 'var(--status-green)' }} />
-              <span style={{ fontSize: '11px', color: 'var(--status-green)' }}>
+              <Check size={14} style={{ color: syncConfig.lastSync !== 'Never' ? 'var(--status-green)' : 'var(--status-yellow)' }} />
+              <span style={{ fontSize: '11px', color: syncConfig.lastSync !== 'Never' ? 'var(--status-green)' : 'var(--status-yellow)' }}>
                 Last synced: {syncConfig.lastSync}
               </span>
               <button className="btn btn-sm" style={{ marginLeft: 'auto' }}>
@@ -163,7 +266,7 @@ export default function SettingsPage() {
               <span className="card-title">Safety Controls</span>
             </div>
             <span className="badge" style={{
-              background: safety.guardMode ? 'var(--status-red-bg)' : safety.carefulMode ? 'var(--status-yellow-bg)' : 'var(--bg-elevated)',
+              background: safety.guardMode ? 'rgba(239,68,68,0.15)' : safety.carefulMode ? 'rgba(245,158,11,0.15)' : 'var(--bg-elevated)',
               color: safety.guardMode ? 'var(--status-red)' : safety.carefulMode ? 'var(--status-yellow)' : 'var(--text-muted)',
             }}>
               {safety.guardMode ? '🛡️ GUARD' : safety.carefulMode ? '⚠️ CAREFUL' : '🟢 NORMAL'}
@@ -310,7 +413,7 @@ export default function SettingsPage() {
                   color: 'var(--text-primary)', fontSize: '12px',
                 }}
                 value={syncConfig.autoSyncInterval}
-                onChange={e => setSyncConfig(prev => ({ ...prev, autoSyncInterval: Number(e.target.value) }))}
+                onChange={e => updateSync('autoSyncInterval', Number(e.target.value))}
               >
                 <option value={15}>15 minutes</option>
                 <option value={30}>30 minutes</option>
@@ -328,9 +431,15 @@ export default function SettingsPage() {
             }}>
               <span style={{ fontSize: '12px', fontWeight: 600, width: '140px' }}>Theme</span>
               <div style={{ display: 'flex', gap: '6px' }}>
-                <button className="btn btn-sm btn-primary">🌙 Dark</button>
-                <button className="btn btn-sm">☀️ Light</button>
-                <button className="btn btn-sm">🖥️ System</button>
+                {(['dark', 'light', 'system'] as const).map(t => (
+                  <button
+                    key={t}
+                    className={`btn btn-sm ${settings.theme === t ? 'btn-primary' : ''}`}
+                    onClick={() => { setSettings(prev => ({ ...prev, theme: t })); setIsDirty(true); }}
+                  >
+                    {t === 'dark' ? '🌙 Dark' : t === 'light' ? '☀️ Light' : '🖥️ System'}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -346,9 +455,22 @@ export default function SettingsPage() {
                 flex: 1, fontSize: '11px', fontFamily: 'var(--font-mono)',
                 color: 'var(--text-accent)',
               }}>
-                c:\Users\Anh Quoc\Documents\GitHub\AppXDevKit
+                {settings.workspace || 'Auto-detected'}
               </code>
               <button className="btn btn-sm">Change</button>
+            </div>
+
+            {/* Version */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '12px',
+              padding: '10px 12px',
+              background: 'var(--bg-secondary)',
+              borderRadius: 'var(--radius-md)',
+            }}>
+              <span style={{ fontSize: '12px', fontWeight: 600, width: '140px' }}>Version</span>
+              <span style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: 'var(--text-accent)' }}>
+                AG Tower v0.1.0
+              </span>
             </div>
           </div>
         )}

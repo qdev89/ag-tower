@@ -789,6 +789,41 @@ fn list_docs_health() -> Result<Vec<DocHealth>, String> {
 }
 
 // ============================================================
+// Settings Persistence
+// ============================================================
+
+#[tauri::command]
+fn get_settings() -> Result<String, String> {
+    let ag_dir = get_antigravity_dir();
+    let path = ag_dir.join("ag-tower-settings.json");
+    if path.exists() {
+        fs::read_to_string(&path)
+            .map_err(|e| format!("Failed to read settings: {}", e))
+    } else {
+        Ok("{}".to_string())
+    }
+}
+
+#[tauri::command]
+fn save_settings(content: String) -> Result<(), String> {
+    // Validate JSON
+    serde_json::from_str::<serde_json::Value>(&content)
+        .map_err(|e| format!("Invalid JSON: {}", e))?;
+
+    let ag_dir = get_antigravity_dir();
+    let path = ag_dir.join("ag-tower-settings.json");
+
+    // Backup existing
+    if path.exists() {
+        let backup = ag_dir.join("ag-tower-settings.json.bak");
+        let _ = fs::copy(&path, &backup);
+    }
+
+    fs::write(&path, &content)
+        .map_err(|e| format!("Failed to save settings: {}", e))
+}
+
+// ============================================================
 // Tauri App Entry Point
 // ============================================================
 
@@ -823,6 +858,8 @@ pub fn run() {
             save_design_md,
             get_git_stats,
             list_docs_health,
+            get_settings,
+            save_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running AG Tower");
