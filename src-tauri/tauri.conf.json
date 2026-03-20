@@ -35,13 +35,29 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["msi", "nsis"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "publisher": "AppXDev",
+    "copyright": "Copyright 2026 AppXDev. All rights reserved.",
+    "category": "DeveloperTool",
+    "shortDescription": "Antigravity Control Tower — Manage AI coding assistants",
+    "longDescription": "AG Tower is a desktop application for managing Antigravity AI coding assistant ecosystems. Control MCP servers, workflows, skills, knowledge bases, agents, and sprint pipelines from a single premium interface.",
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": ""
+    },
+    "nsis": {
+      "displayLanguageSelector": false,
+      "installerIcon": "icons/icon.ico",
+      "headerImage": null,
+      "sidebarImage": null
+    }
   }
 }
